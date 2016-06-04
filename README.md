@@ -11,6 +11,11 @@ Features include:
 * Step back and forth through multiple files in a single diff
 * Rich support for image diffs
 
+<!-- This is `git webdiff 05157bba^..05157bba`, in this repo -->
+![Screenshot of webdiff in action](http://www.danvk.org/webdiff.png)
+
+![Screenshot of image diffs](http://www.danvk.org/webdiff-images.png)
+
 Installation
 ------------
 
@@ -42,16 +47,18 @@ You can also use `webdiff` to view GitHub pull requests:
 
 This will download the files relevant to the Pull Request and run `webdiff`.
 
-Preview
-----------
+If you run into GitHub API quota limits or you'd like to use webdiff with
+private repos, you can set your credentials in a `.githubrc` file:
 
-![Screenshot of webdiff in action](http://www.danvk.org/webdiff.png)
+```
+user.login: yourusername
+user.token: your-personal-access-tokens
+```
 
-This shows a JavaScript file being diffed. A few things to note:
-* Line deletions and per-character modifications.
-* Long stretches of common lines are elided, but can be shown if desired.
-* Syntax highlighting (via highlight.js)
-* Keyboard shortcuts (j/k) for stepping through files in the diff.
+Make sure you chmod this file to only be readable by yourself. You can generate
+a personal access token for webdiff via github.com → profile → Settings →
+Personal access tokens. Make sure to grant all the "repo" privileges.
+
 
 Development
 -----------
@@ -90,3 +97,5 @@ To iterate on the PyPI package, run:
     deactivate
     cd /tmp/webdiff-test
     pip install webdiff-X.Y.Z.tar.gz
+
+[oauth]: https://github.com/danvk/webdiff/issues/103

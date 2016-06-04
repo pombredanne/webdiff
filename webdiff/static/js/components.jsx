@@ -4,6 +4,13 @@
  */
 'use strict';
 
+// Perceptual diffing mode
+var PDIFF_MODE = {
+  OFF: 0,
+  BBOX: 1,
+  PIXELS: 2
+};
+
 // Webdiff application root.
 var makeRoot = function(filePairs, initiallySelectedIndex) {
   return React.createClass({
@@ -15,7 +22,7 @@ var makeRoot = function(filePairs, initiallySelectedIndex) {
     mixins: [ReactRouter.Navigation, ReactRouter.State],
     getInitialState: () => ({
       imageDiffMode: 'side-by-side',
-      showPerceptualDiffBox: false
+      pdiffMode: PDIFF_MODE.OFF
     }),
     getDefaultProps: function() {
       return {filePairs, initiallySelectedIndex};
@@ -31,38 +38,36 @@ var makeRoot = function(filePairs, initiallySelectedIndex) {
     changeImageDiffModeHandler: function(mode) {
       this.setState({imageDiffMode: mode});
     },
-    changeShowPerceptualDiffBox: function(shouldShow) {
-      this.setState({showPerceptualDiffBox: shouldShow});
+    changePdiffMode: function(pdiffMode) {
+      this.setState({pdiffMode});
     },
-    computePerceptualDiff: function() {
+    computePerceptualDiffBox: function() {
       var fp = this.props.filePairs[this.getIndex()];
-      computePerceptualDiff('/a/image/' + fp.a, '/b/image/' + fp.b)
-        .then((diffData) => {
-          fp.diffData = diffData;
-          this.forceUpdate();  // tell react about this change
-        })
-        .catch(function(reason) {
-          console.error(reason);
-        });
+      if (!fp.is_image_diff || !isSameSizeImagePair(fp)) return;
+      $.getJSON(`/pdiffbbox/${this.getIndex()}`)
+          .done(bbox => {
+            if (!fp.diffData) fp.diffData = {};
+            fp.diffData.diffBounds = bbox;
+            this.forceUpdate();  // tell react about this change
+          }).fail(error => {
+            console.error(error);
+          });
     },
     render: function() {
       var idx = this.getIndex(),
           filePair = this.props.filePairs[idx];
-
-      if (this.state.showPerceptualDiffBox && !filePair.diffData) {
-        this.computePerceptualDiff();
-      }
 
       return (
         <div>
           <FileSelector selectedFileIndex={idx}
                         filePairs={this.props.filePairs}
                         fileChangeHandler={this.selectIndex} />
-          <DiffView filePair={filePair}
+          <DiffView key={'diff-' + idx}
+                    thinFilePair={filePair}
                     imageDiffMode={this.state.imageDiffMode}
-                    showPerceptualDiffBox={this.state.showPerceptualDiffBox}
+                    pdiffMode={this.state.pdiffMode}
                     changeImageDiffModeHandler={this.changeImageDiffModeHandler}
-                    changeShowPerceptualDiffBox={this.changeShowPerceptualDiffBox} />
+                    changePdiffMode={this.changePdiffMode} />
         </div>
       );
     },
@@ -84,7 +89,7 @@ var makeRoot = function(filePairs, initiallySelectedIndex) {
           this.setState({imageDiffMode: 'blink'});
         } else if (e.keyCode == 80) {  // p
           this.setState({
-            showPerceptualDiffBox: !this.state.showPerceptualDiffBox
+            pdiffMode: (this.state.pdiffMode + 1) % 3
           });
         }
       });
@@ -228,17 +233,33 @@ var FileDropdown = React.createClass({
 // A diff for a single pair of files (left/right).
 var DiffView = React.createClass({
   propTypes: {
-    filePair: React.PropTypes.object.isRequired,
+    thinFilePair: React.PropTypes.object.isRequired,
     imageDiffMode: React.PropTypes.oneOf(IMAGE_DIFF_MODES).isRequired,
-    showPerceptualDiffBox: React.PropTypes.bool,
+    pdiffMode: React.PropTypes.number,
     changeImageDiffModeHandler: React.PropTypes.func.isRequired,
-    changeShowPerceptualDiffBox: React.PropTypes.func.isRequired
+    changePdiffMode: React.PropTypes.func.isRequired
+  },
+  getInitialState: function() {
+    // Only the "thin" file pair is available on page load.
+    // To get the "thick" file pair, we need to issue an XHR
+    return {filePair: null};
+  },
+  componentDidMount: function() {
+    getThickDiff(this.props.thinFilePair.idx).done(filePair => {
+      filePair.idx = this.props.thinFilePair.idx;
+      this.setState({filePair});
+    });
   },
   render: function() {
-    if (this.props.filePair.is_image_diff) {
-      return <ImageDiff {...this.props} />;
+    var filePair = this.state.filePair;
+    if (!filePair) {
+      return <div>Loading…</div>;
+    }
+
+    if (filePair.is_image_diff) {
+      return <ImageDiff filePair={filePair} {...this.props} />;
     } else {
-      return <CodeDiff filePair={this.props.filePair} />;
+      return <CodeDiff filePair={filePair} />;
     }
   }
 });
@@ -249,8 +270,11 @@ var NoChanges = React.createClass({
     filePair: React.PropTypes.object.isRequired
   },
   render: function() {
-    if (this.props.filePair.no_changes) {
-      return <div className="no-changes">(No Changes)</div>;
+    var fp = this.props.filePair;
+    if (fp.no_changes) {
+      return <div className="no-changes">(File content is identical)</div>;
+    } else if (fp.is_image_diff && fp.are_same_pixels) {
+      return <div className="no-changes">Pixels are the same, though file content differs (perhaps the headers are different?)</div>;
     } else {
       return null;
     }
